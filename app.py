@@ -11,7 +11,7 @@ from PIL import Image
 
 MODEL_ID = "dhruv-kothari-yrwsq/casting-defect-tcdc-demo-1-resnet18-t1"
 UNIVERSE_URL = "https://universe.roboflow.com/dhruv-kothari-yrwsq/casting-defect-tcdc-demo"
-GITHUB_URL = "https://github.com/PLACEHOLDER/casting-demo"  # fill in once repo exists
+GITHUB_URL = "https://github.com/dhruvk23/casting-demo-app"
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
 CONFUSION_MATRIX = Path(__file__).parent / "confusion_matrix.png"
