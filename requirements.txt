@@ -1,0 +1,6 @@
+inference-sdk
+streamlit
+requests
+pillow
+matplotlib
+python-dotenv
