@@ -8,6 +8,7 @@ Reads ROBOFLOW_API_KEY from .env. The key is never printed.
 """
 
 import argparse
+import base64
 import csv
 import json
 import os
@@ -18,41 +19,39 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import requests
 from dotenv import load_dotenv
-from inference_sdk import InferenceHTTPClient
 
 TEST_DIR = Path(__file__).parent / "test-set"
 POSITIVE_CLASS = "defect"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 MODEL_ID = "dhruv-kothari-yrwsq/casting-defect-tcdc-demo-1-resnet18-t1"
+INFERENCE_URL = f"https://serverless.roboflow.com/{MODEL_ID}"
 
 
-def get_client():
+def get_api_key():
     load_dotenv(Path(__file__).parent / ".env")
     api_key = os.environ.get("ROBOFLOW_API_KEY")
     if not api_key or api_key == "PASTE_KEY_HERE":
         sys.exit("ROBOFLOW_API_KEY is not set in .env")
-    return InferenceHTTPClient(
-        api_url="https://serverless.roboflow.com",
-        api_key=api_key,
+    return api_key
+
+
+def run_model(api_key: str, image_path: str):
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode("ascii")
+    resp = requests.post(
+        INFERENCE_URL,
+        params={"api_key": api_key},
+        data=img_b64,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=15,
     )
-
-
-def run_model(client, image_path):
-    return client.infer(str(image_path), model_id=MODEL_ID)
-
-
-def extract_prediction(result):
-    """Return (class_name, confidence) from a classification response.
-
-    Confirmed response shape:
-    {"inference_id": ..., "time": ..., "image": {...},
-     "predictions": [{"class": "defect", "class_id": 1, "confidence": 1.0}],
-     "top": "defect", "confidence": 1.0}
-    """
-    if not isinstance(result, dict) or "top" not in result:
-        raise ValueError(f"Unexpected response: {json.dumps(result, default=str)[:500]}")
+    resp.raise_for_status()
+    result = resp.json()
+    if "top" not in result:
+        raise ValueError(f"Unexpected response: {json.dumps(result)[:500]}")
     return result["top"], float(result.get("confidence", float("nan")))
 
 
@@ -68,12 +67,12 @@ def collect_images():
     return samples, classes
 
 
-def probe(client):
+def probe(api_key: str):
     samples, _ = collect_images()
     image_path, true_label = samples[0]
     print(f"Probing with: {image_path.name} (true class: {true_label})")
-    result = run_model(client, image_path)
-    print(json.dumps(result, indent=2, default=str))
+    predicted, confidence = run_model(api_key, str(image_path))
+    print(f"Result: top={predicted!r}, confidence={confidence:.4f}")
 
 
 def save_confusion_matrix(matrix, classes, path):
@@ -96,7 +95,7 @@ def save_confusion_matrix(matrix, classes, path):
     plt.close(fig)
 
 
-def evaluate(client):
+def evaluate(api_key: str):
     samples, classes = collect_images()
     print(f"Found {len(samples)} images across classes: {', '.join(classes)}\n")
 
@@ -104,8 +103,7 @@ def evaluate(client):
     failed = []
     for index, (image_path, true_label) in enumerate(samples, start=1):
         try:
-            result = run_model(client, image_path)
-            predicted, confidence = extract_prediction(result)
+            predicted, confidence = run_model(api_key, str(image_path))
             predicted = predicted.strip().lower()
         except Exception as exc:  # noqa: BLE001 — skip and report any failed image
             failed.append((image_path.name, str(exc)[:200]))
@@ -185,13 +183,13 @@ def evaluate(client):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--probe", action="store_true",
-                        help="Run one image and print the raw response JSON, then exit.")
+                        help="Run one image and print the raw response, then exit.")
     args = parser.parse_args()
-    client = get_client()
+    api_key = get_api_key()
     if args.probe:
-        probe(client)
+        probe(api_key)
     else:
-        evaluate(client)
+        evaluate(api_key)
 
 
 if __name__ == "__main__":

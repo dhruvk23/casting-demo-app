@@ -1,15 +1,17 @@
+import base64
 import os
 import tempfile
 from pathlib import Path
 
+import requests
 import streamlit as st
 from dotenv import load_dotenv
-from inference_sdk import InferenceHTTPClient
 from PIL import Image
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
 MODEL_ID = "dhruv-kothari-yrwsq/casting-defect-tcdc-demo-1-resnet18-t1"
+INFERENCE_URL = f"https://serverless.roboflow.com/{MODEL_ID}"
 UNIVERSE_URL = "https://universe.roboflow.com/dhruv-kothari-yrwsq/casting-defect-tcdc-demo"
 GITHUB_URL = "https://github.com/dhruvk23/casting-demo-app"
 
@@ -25,6 +27,7 @@ OK_SAMPLES = [
 
 # ── API key ───────────────────────────────────────────────────────────────────
 
+@st.cache_resource
 def get_api_key():
     try:
         return st.secrets["ROBOFLOW_API_KEY"]
@@ -37,20 +40,19 @@ def get_api_key():
         return key
 
 
-@st.cache_resource
-def get_client():
-    return InferenceHTTPClient(
-        api_url="https://serverless.roboflow.com",
-        api_key=get_api_key(),
-    )
-
-
 def run_inference(image_path: str):
-    client = get_client()
-    result = client.infer(image_path, model_id=MODEL_ID)
-    predicted = result["top"]
-    confidence = float(result["confidence"])
-    return predicted, confidence
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode("ascii")
+    resp = requests.post(
+        INFERENCE_URL,
+        params={"api_key": get_api_key()},
+        data=img_b64,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    result = resp.json()
+    return result["top"], float(result["confidence"])
 
 
 # ── Page config ───────────────────────────────────────────────────────────────
